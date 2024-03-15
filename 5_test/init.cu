@@ -5,6 +5,9 @@
 
 #define DATA_SIZE 1048576
 #define THREAD_NUM 256
+#define BLOCK_NUM 4 
+//　在这个程序中，BLOCK_NUM=1时最快
+//  随着BLOCK_NUM变大，速度越来越慢，为4时速度就最慢了，再增加BLOCK_NUM也是一样的结果。
 
 int data[DATA_SIZE];
 
@@ -69,15 +72,17 @@ __global__ void sumOfSquares(int *num, int *result, clock_t *time)
 {
     // 表示当前线程是第几个thread
     int tid = threadIdx.x;
+    // 表示当前thread是第几个block
+    int bid = blockIdx.x;
     // 计算每个线程需要完成的量
     int size = DATA_SIZE / THREAD_NUM;
     int sum = 0;
     int i;
     clock_t start ;
     if (tid == 0) {
-        start = clock();
+        time[bid] = clock();
     }
-    for (i = tid; i < DATA_SIZE; i += THREAD_NUM) {
+    for (i = bid * THREAD_NUM + tid; i < DATA_SIZE; i += BLOCK_NUM * THREAD_NUM) {
         sum += num[i] * num[i] * num[i];
     }
     /*
@@ -85,9 +90,9 @@ __global__ void sumOfSquares(int *num, int *result, clock_t *time)
         sum += num[i] * num[i] * num[i];
     }
     */
-    *result = sum;
+    result[bid * THREAD_NUM + tid] = sum;
     if (tid == 0)
-        *time = clock() - start;
+        time[bid + BLOCK_NUM] = clock();
 }
 
 int main()
@@ -103,36 +108,47 @@ int main()
     clock_t *time;
 
     cudaMalloc((void **)&gpudata, sizeof(int)*DATA_SIZE);
-    cudaMalloc((void **)&result, sizeof(int)*THREAD_NUM);
-    cudaMalloc((void **)&time, sizeof(clock_t));
+    cudaMalloc((void **)&result, sizeof(int)*THREAD_NUM*BLOCK_NUM);
+    cudaMalloc((void **)&time, sizeof(clock_t)*BLOCK_NUM*2);
 
     cudaMemcpy(gpudata, data, sizeof(int)*DATA_SIZE, cudaMemcpyHostToDevice);
 
-    sumOfSquares<<<1, THREAD_NUM, 0>>>(gpudata, result, time);
+    sumOfSquares<<<BLOCK_NUM, THREAD_NUM, 0>>>(gpudata, result, time);
 
-    int sum[THREAD_NUM];
-    clock_t time_used;
-    cudaMemcpy(&sum, result, sizeof(int)*THREAD_NUM, cudaMemcpyDeviceToHost);
-    cudaMemcpy(&time_used, time, sizeof(clock_t), cudaMemcpyDeviceToHost);
+    int sum[THREAD_NUM * BLOCK_NUM];
+    clock_t time_used[BLOCK_NUM * 2];
+    cudaMemcpy(&sum, result, sizeof(int)*THREAD_NUM*BLOCK_NUM, cudaMemcpyDeviceToHost);
+    cudaMemcpy(&time_used, time, sizeof(clock_t)*BLOCK_NUM*2, cudaMemcpyDeviceToHost);
 
     cudaFree(gpudata);
     cudaFree(result);
     cudaFree(time);
 
     int final_sum = 0;
-    for (int i = 0; i < THREAD_NUM; i++) {
+    for (int i = 0; i < THREAD_NUM*BLOCK_NUM; i++) {
         final_sum += sum[i];
     }
 
-    printf("GPU sum: %d, time used: %ld\n", final_sum, time_used);
+    clock_t min_start, max_end;
+    min_start = time_used[0];
+    max_end = time_used[BLOCK_NUM];
+
+    for (int i = 1; i < BLOCK_NUM; i++) {
+        if (min_start > time_used[i])
+            min_start = time_used[i];
+        if (max_end < time_used[i + BLOCK_NUM]) 
+            max_end = time_used[i + BLOCK_NUM];
+    }
+
+    printf("GPU sum: %d, time used: %ld\n", final_sum, max_end - min_start);
 
     final_sum = 0;
-    time_used = clock();
+    clock_t time_use = clock();
     for (int i = 0; i < DATA_SIZE; i++) {
         final_sum += data[i] * data[i] * data[i];
     }
-    time_used = clock() - time_used;
+    time_use = clock() - time_use;
 
-    printf("CPU sum: %d, time used: %ld\n", final_sum, time_used);
+    printf("CPU sum: %d, time used: %ld\n", final_sum, time_use);
     return 0;
 }

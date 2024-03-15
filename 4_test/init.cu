@@ -85,7 +85,7 @@ __global__ void sumOfSquares(int *num, int *result, clock_t *time)
         sum += num[i] * num[i] * num[i];
     }
     */
-    *result = sum;
+    result[tid] = sum;
     if (tid == 0)
         *time = clock() - start;
 }

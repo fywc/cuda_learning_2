@@ -103,31 +103,36 @@ int main()
     clock_t *time;
 
     cudaMalloc((void **)&gpudata, sizeof(int)*DATA_SIZE);
-    cudaMalloc((void **)&result, sizeof(int));
+    cudaMalloc((void **)&result, sizeof(int)*THREAD_NUM);
     cudaMalloc((void **)&time, sizeof(clock_t));
 
     cudaMemcpy(gpudata, data, sizeof(int)*DATA_SIZE, cudaMemcpyHostToDevice);
 
-    sumOfSquares<<<1, 1, 0>>>(gpudata, result, time);
+    sumOfSquares<<<1, THREAD_NUM, 0>>>(gpudata, result, time);
 
-    int sum;
+    int sum[THREAD_NUM];
     clock_t time_used;
-    cudaMemcpy(&sum, result, sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&sum, result, sizeof(int)*THREAD_NUM, cudaMemcpyDeviceToHost);
     cudaMemcpy(&time_used, time, sizeof(clock_t), cudaMemcpyDeviceToHost);
 
     cudaFree(gpudata);
     cudaFree(result);
     cudaFree(time);
 
-    printf("GPU sum: %d, time used: %ld\n", sum, time_used);
+    int final_sum = 0;
+    for (int i = 0; i < THREAD_NUM; i++) {
+        final_sum += sum[i];
+    }
 
-    sum = 0;
+    printf("GPU sum: %d, time used: %ld\n", final_sum, time_used);
+
+    final_sum = 0;
     time_used = clock();
     for (int i = 0; i < DATA_SIZE; i++) {
-        sum += data[i] * data[i] * data[i];
+        final_sum += data[i] * data[i] * data[i];
     }
     time_used = clock() - time_used;
 
-    printf("CPU sum: %d, time used: %ld\n", sum, time_used);
+    printf("CPU sum: %d, time used: %ld\n", final_sum, time_used);
     return 0;
 }

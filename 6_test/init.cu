@@ -70,6 +70,7 @@ bool InitCUDA()
 
 __global__ void sumOfSquares(int *num, int *result, clock_t *time)
 {
+    extern __shared__ int shared[];
     // 表示当前线程是第几个thread
     int tid = threadIdx.x;
     // 表示当前thread是第几个block
@@ -79,18 +80,28 @@ __global__ void sumOfSquares(int *num, int *result, clock_t *time)
     int sum = 0;
     int i;
     clock_t start ;
+
+    shared[tid] = 0;
     if (tid == 0) {
         time[bid] = clock();
     }
     for (i = bid * THREAD_NUM + tid; i < DATA_SIZE; i += BLOCK_NUM * THREAD_NUM) {
-        sum += num[i] * num[i] * num[i];
+        shared[tid] += num[i] * num[i] * num[i];
     }
+
+    __syncthreads();
     /*
     for (i = 0; i < DATA_SIZE; i++) {
         sum += num[i] * num[i] * num[i];
     }
     */
-    result[bid * THREAD_NUM + tid] = sum;
+    // result[bid * THREAD_NUM + tid] = sum;
+    if (tid == 0) {
+        for (i = 1; i < THREAD_NUM; i++) {
+            shared[0] += shared[i];
+        }
+        result[bid] = shared[0];
+    }
     if (tid == 0)
         time[bid + BLOCK_NUM] = clock();
 }
@@ -108,16 +119,16 @@ int main()
     clock_t *time;
 
     cudaMalloc((void **)&gpudata, sizeof(int)*DATA_SIZE);
-    cudaMalloc((void **)&result, sizeof(int)*THREAD_NUM*BLOCK_NUM);
+    cudaMalloc((void **)&result, sizeof(int)*BLOCK_NUM);
     cudaMalloc((void **)&time, sizeof(clock_t)*BLOCK_NUM*2);
 
     cudaMemcpy(gpudata, data, sizeof(int)*DATA_SIZE, cudaMemcpyHostToDevice);
 
-    sumOfSquares<<<BLOCK_NUM, THREAD_NUM, 0>>>(gpudata, result, time);
+    sumOfSquares<<<BLOCK_NUM, THREAD_NUM, THREAD_NUM*sizeof(int)>>>(gpudata, result, time);
 
-    int sum[THREAD_NUM * BLOCK_NUM];
+    int sum[BLOCK_NUM];
     clock_t time_used[BLOCK_NUM * 2];
-    cudaMemcpy(&sum, result, sizeof(int)*THREAD_NUM*BLOCK_NUM, cudaMemcpyDeviceToHost);
+    cudaMemcpy(&sum, result, sizeof(int)*BLOCK_NUM, cudaMemcpyDeviceToHost);
     cudaMemcpy(&time_used, time, sizeof(clock_t)*BLOCK_NUM*2, cudaMemcpyDeviceToHost);
 
     cudaFree(gpudata);
@@ -125,7 +136,7 @@ int main()
     cudaFree(time);
 
     int final_sum = 0;
-    for (int i = 0; i < THREAD_NUM*BLOCK_NUM; i++) {
+    for (int i = 0; i < BLOCK_NUM; i++) {
         final_sum += sum[i];
     }
 

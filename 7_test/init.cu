@@ -96,10 +96,17 @@ __global__ void sumOfSquares(int *num, int *result, clock_t *time)
     }
     */
     // result[bid * THREAD_NUM + tid] = sum;
-    if (tid == 0) {
-        for (i = 1; i < THREAD_NUM; i++) {
-            shared[0] += shared[i];
+    int offset = 1;
+    int mask = 1;
+    while (offset < THREAD_NUM) {
+        if ((tid & mask) == 0) {
+            shared[tid] += shared[tid + offset];
         }
+        offset += offset;
+        mask = offset + mask;
+        __syncthreads();
+    }
+    if (tid == 0) {
         result[bid] = shared[0];
     }
     if (tid == 0)

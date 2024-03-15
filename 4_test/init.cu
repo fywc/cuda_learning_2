@@ -77,7 +77,7 @@ __global__ void sumOfSquares(int *num, int *result, clock_t *time)
     if (tid == 0) {
         start = clock();
     }
-    for (i = tid * size; i < (tid + 1) * size; i++) {
+    for (i = tid; i < DATA_SIZE; i += THREAD_NUM) {
         sum += num[i] * num[i] * num[i];
     }
     /*
